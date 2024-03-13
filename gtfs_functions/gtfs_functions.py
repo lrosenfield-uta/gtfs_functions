@@ -9,7 +9,8 @@ import requests, io
 import pendulum as pl
 import hashlib
 from shapely.geometry import LineString, MultiPoint
-from gtfs_functions.aux_functions import *
+#from gtfs_functions.aux_functions import *
+from aux_functions import *
 from itertools import permutations, chain
 from shapely import distance
 from h3 import geo_to_h3, k_ring
@@ -25,13 +26,14 @@ if not sys.warnoptions:
     warnings.simplefilter("ignore")
 
 logging.basicConfig(level=logging.INFO)
-
+logging.info('imported the dev version of gtfs_functions')
 
 class Feed:
     def __init__(
             self,
             gtfs_path: str,
             time_windows: list = [0, 6, 9, 15, 19, 22, 24],
+            service_ids: list = [],
             busiest_date: bool = True,
             geo: bool = True,
             patterns: bool = True,
@@ -45,6 +47,7 @@ class Feed:
         self._time_windows = time_windows
         self._busiest_date = busiest_date
         self._geo = geo
+        self._service_ids = service_ids
         self._patterns = patterns
         self._start_date = start_date
         self._end_date = end_date
@@ -79,6 +82,10 @@ class Feed:
     def time_windows(self):
         return self._time_windows
     
+    @property
+    def service_ids(self):
+        return self._service_ids
+
     @property
     def busiest_date(self):
         return self._busiest_date
@@ -560,10 +567,62 @@ class Feed:
         
         return dates_service_id[~dates_service_id.keep.isnull()]
 
+    def _trips_from_busiest_date(self):
+        """
+        Helper function for get_trips. 
+            Returns a list of the service_ids of the busiest date(s)
+        """
+        dates = self.dates
+        dates_service_id = self.parse_calendar()
+        
+        # REMOVE
+        self._setup_temp_trips()
+
+        # If busiest_date=True, we have to count the number of trips
+        if self.busiest_date:
+            # Trip per date
+            date_ntrips = self._temp_trips.merge(dates_service_id).\
+                    groupby(['date']).trip_id.count().\
+                    sort_values(ascending=False)
+            
+        # If we are looking for the busiest date within our date period,
+        # we only keep the dates in that period of time.
+        if (self.busiest_date) & (dates!=[]):
+            dates_service_id = dates_service_id[dates_service_id.date.isin(dates)]
+            date_ntrips = date_ntrips[date_ntrips.index.isin(dates)]
+        
+        # Now that we've considered both cases we can just filter 
+        # with the busiest_date of the "dates" that made it this far
+        if self.busiest_date:
+            # In that case, if "dates" is empty we need to find the busiest date
+            busiest_date = list(date_ntrips[date_ntrips==date_ntrips.max()].index)
+            max_trips = date_ntrips[date_ntrips==date_ntrips.max()].values[0]
+
+            logging.info(f'The busiest date/s of this feed or your selected date range is/are:  {busiest_date} with {max_trips} trips.')
+            logging.info('In the case that more than one busiest date was found, the first one will be considered!')
+            logging.info(f'In this case is {busiest_date[0]}.')
+
+            # We need "dates" to be a list
+            dates = busiest_date[:1]
+        return (dates_service_id[dates_service_id.date.isin(dates)]
+                ['service_id'].tolist())
+
+    def _setup_temp_trips(self):
+        """
+        Debugging function for _trips_from_busiest_date (probably)
+
+        Sets up a 'private' variable (self._temp_trips) so that we can
+        run _trips_from_busiest_date without first calling get_trips
+        """
+        trips = extract_file('trips', self)
+        trips['trip_id'] = trips.trip_id.astype(str)
+        trips['route_id'] = trips.route_id.astype(str)
+        self._temp_trips = trips.copy()
 
     def get_trips(self):
         routes = self.routes
         dates = self.dates
+        service_ids = self.service_ids
 
         trips = extract_file('trips', self)
         trips['trip_id'] = trips.trip_id.astype(str)
@@ -575,54 +634,39 @@ class Feed:
         # If we were asked to only fetch the busiest date
         # if self.busiest_date:
             # trips = trips[trips.service_id==self.busiest_service_id]
+        """
+        If service ID's have been provided, we just pull those directly
 
-        # If we're looking for the busiest date or a specific list of
-        # dates we need to parse de calendar
-        if (self.busiest_date) | (dates!=[]):
-            """
-            In the case we have three possibilites:
-            1. busiest_date=True & dates==[]: in this case the user looks for the 
-                busiest date in the entire feed
-            2. busiest_date=True & dates!=[]: in this case the user looks for the
-                busiest date within the date range provided.
-            3. busiest_daet=False & dates!=[]: in this case the user looks for the
-                entire feed within the date range provided and we don't need to change
-                the "dates" variable at all.
-            """
-            dates_service_id = self.parse_calendar()
+        If we haven't gotten service ID's, then
+        1. busiest_date=True & dates==[]: 
+            we look for the busiest date in the entire feed
+        2. busiest_date=True & dates!=[]: 
+            we look for the busiest date in the range provided
+        3. busiest_date=False & dates!=[]: 
+            we go through the entire feed within the date range provided 
+            and we don't need to change the "dates" variable at all.
+        """
 
-            # If busiest_date=True, we have to count the number of trips
-            if self.busiest_date:
-                # Trip per date
-                date_ntrips = trips.merge(dates_service_id).groupby(['date']).\
-                        trip_id.count().sort_values(ascending=False)
-                
-            # If we are looking for the busiest date within our date period,
-            # we only keep the dates in that period of time.
-            if (self.busiest_date) & (dates!=[]):
-                dates_service_id = dates_service_id[dates_service_id.date.isin(dates)]
-                date_ntrips = date_ntrips[date_ntrips.index.isin(dates)]
-            
-            # Now that we've considered both cases we can just filter 
-            # with the busiest_date of the "dates" that made it this far
-            if self.busiest_date:
-                # In that case, if "dates" is empty we need to find the busiest date
-                busiest_date = list(date_ntrips[date_ntrips==date_ntrips.max()].index)
-                max_trips = date_ntrips[date_ntrips==date_ntrips.max()].values[0]
+        # If we've been provided service ID's we use them directly
+        # If not, we hand off to the logic in _trips_from_busiest_date
+        if service_ids == []:
+            if (self.busiest_date) | (dates!=[]):
 
-                logging.info(f'The busiest date/s of this feed or your selected date range is/are:  {busiest_date} with {max_trips} trips.')
-                logging.info('In the case that more than one busiest date was found, the first one will be considered.')
-                logging.info(f'In this case is {busiest_date[0]}.')
-
-                # We need "dates" to be a list
-                dates = busiest_date[:1]
-            
+                # I'm fairly certain this is the 'safe' way to do this
+                self._temp_trips = trips.copy()
+                service_ids = self._trips_from_busiest_date()
+        
+        # Once we've (potentially) gotten service IDs from dates, we try again
+        if service_ids != []:    
             # Keep only the trips that are relevant to the use case
-            trips = trips.set_index('service_id').join(
-                dates_service_id[dates_service_id.date.isin(dates)]\
-                    .set_index('service_id'),
-                how='inner'
-            ).reset_index(names='service_id').drop(['keep', 'date'], axis=1).drop_duplicates()
+            logging.info(f'The following service ids are being included {service_ids}')
+            trips2 = trips.query('service_id in @service_ids')
+            trips = trips2.reset_index(names='service_id').drop_duplicates()
+            #trips = trips.set_index('service_id').join(
+            #    dates_service_id[dates_service_id.date.isin(dates)]\
+            #        .set_index('service_id'),
+            #    how='inner'
+            #).reset_index(names='service_id').drop(['keep', 'date'], axis=1).drop_duplicates()
 
         # Get routes info in trips
         # The GTFS feed might be missing some of the keys, e.g. direction_id or shape_id.
