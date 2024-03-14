@@ -26,7 +26,7 @@ if not sys.warnoptions:
     warnings.simplefilter("ignore")
 
 logging.basicConfig(level=logging.INFO)
-logging.info('imported the dev version of gtfs_functions')
+logging.info('imported the dev version of gtfs_functions (rev 0314-940)')
 
 class Feed:
     def __init__(
@@ -43,6 +43,13 @@ class Feed:
         """
         Feed class to handle GTFS data.
         """
+        if service_ids != []:
+            if ((start_date != None) | (end_date != None)):
+                raise ValueError("Feed was passed both Service IDs and Dates, "
+                                 "but we can only handle one at a time")
+            logging.info('Feed was initiated with Service IDs. '
+                         'Ignoring busiest_date')
+        
         self._gtfs_path = gtfs_path
         self._time_windows = time_windows
         self._busiest_date = busiest_date
@@ -73,6 +80,7 @@ class Feed:
         self._avg_speeds = None
         self._dist_matrix = None
         self._dates_service_id = None
+
 
     @property
     def gtfs_path(self):
@@ -575,9 +583,6 @@ class Feed:
         dates = self.dates
         dates_service_id = self.parse_calendar()
         
-        # REMOVE
-        self._setup_temp_trips()
-
         # If busiest_date=True, we have to count the number of trips
         if self.busiest_date:
             # Trip per date
@@ -606,18 +611,6 @@ class Feed:
             dates = busiest_date[:1]
         return (dates_service_id[dates_service_id.date.isin(dates)]
                 ['service_id'].tolist())
-
-    def _setup_temp_trips(self):
-        """
-        Debugging function for _trips_from_busiest_date (probably)
-
-        Sets up a 'private' variable (self._temp_trips) so that we can
-        run _trips_from_busiest_date without first calling get_trips
-        """
-        trips = extract_file('trips', self)
-        trips['trip_id'] = trips.trip_id.astype(str)
-        trips['route_id'] = trips.route_id.astype(str)
-        self._temp_trips = trips.copy()
 
     def get_trips(self):
         routes = self.routes
@@ -659,14 +652,11 @@ class Feed:
         # Once we've (potentially) gotten service IDs from dates, we try again
         if service_ids != []:    
             # Keep only the trips that are relevant to the use case
-            logging.info(f'The following service ids are being included {service_ids}')
-            trips2 = trips.query('service_id in @service_ids')
-            trips = trips2.reset_index(names='service_id').drop_duplicates()
-            #trips = trips.set_index('service_id').join(
-            #    dates_service_id[dates_service_id.date.isin(dates)]\
-            #        .set_index('service_id'),
-            #    how='inner'
-            #).reset_index(names='service_id').drop(['keep', 'date'], axis=1).drop_duplicates()
+            logging.info(f'Including trips under the following service IDs:\n'
+                         f'{service_ids}')
+            trips = trips.query('service_id in @service_ids')\
+                .reset_index(names='service_id', drop=True)\
+                .drop_duplicates()
 
         # Get routes info in trips
         # The GTFS feed might be missing some of the keys, e.g. direction_id or shape_id.
