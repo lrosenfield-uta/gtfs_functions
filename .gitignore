@@ -3,3 +3,11 @@ example
 notebooks
 *.pyc
 *.sh
+rt4.html
+rt613.html
+speed.html
+*.html
+Riders.ipynb
+2024_January_Stops.csv
+2023_04_stop_Apr_2023.csv
+test_setup.py
