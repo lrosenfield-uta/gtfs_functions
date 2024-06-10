@@ -8,6 +8,18 @@ import numpy as np
 import folium
 from branca.colormap import LinearColormap
 CSV_PATH = '2024_January_Stops.csv'
+DEBUG_STEP = 0
+DEBUG_MODE = False
+
+DEFAULT_COLORSCALE = LinearColormap(
+    colors=['#570600', '#ce0e2d', '#dc7237', '#f6d32a', '#6abf4b','#45842e','#2e847d'],
+    index =[0, 2.5, 5, 10, 20, 25, 40],
+    tick_labels=[10, 20, 30, 40],
+    vmin = 0,
+    vmax = 50,
+    caption='productivity'
+    )
+
 #import gtfs_functions
 #import gtfs_plots as gt_plt
 
@@ -139,7 +151,7 @@ def fix_unmatched_ridership(df, unmatched_ridership):
 
     log.info('Attempting sequence-based matching \n')
 
-    df.sort_index().to_clipboard()
+    debug_dataframe(df.sort_index())
 
     # Prep and combine based on stop sequence 
     # (we warn 'cause this may give bad data)
@@ -165,11 +177,12 @@ def fix_unmatched_ridership(df, unmatched_ridership):
         log.info('Unmatched ridership remains. Are your data sources'
                     'up-to-date? \n'
                     f'{unmatched_ridership["StopName_x"]}\n')
-    print(df)    
+    #print(df)    
+    debug_dataframe(df)
     return df
 
 
-def combine_ridership_route(segments, rider_df):
+def combine_ridership_route(segments, rider_df, check_dups = False, retry_matching= True):
     """
     Combines route segments with ridership
         
@@ -187,11 +200,12 @@ def combine_ridership_route(segments, rider_df):
     # This is obnoxious, but I don't know of a better way to do it
 
     # CONSIDER uncommenting
-    dup_check = df.duplicated(subset = ['stop_sequence'])
-    if not dup_check[dup_check].index.empty:
-        log.info('removing duplicates \n')
-        log.info(df[dup_check])
-    df = df.drop_duplicates(subset = ['stop_sequence'])
+    if check_dups:
+        dup_check = df.duplicated(subset = ['stop_sequence'])
+        if not dup_check[dup_check].index.empty:
+            log.info('removing duplicates \n')
+            log.info(df[dup_check])
+        df = df.drop_duplicates(subset = ['stop_sequence'])
 
     # Plug in the EOL Row
     df = pd.concat([df, create_eol_row(df)]) # Why even is Pylance
@@ -226,7 +240,8 @@ def combine_ridership_route(segments, rider_df):
                  f'{unmatched_printable}\n')
         
         # More of a headache than it's worth
-        #df = fix_unmatched_ridership(df, unmatched_ridership)
+        if retry_matching:
+           df = fix_unmatched_ridership(df, unmatched_ridership)
 
     else:
         # Klunk
@@ -412,8 +427,11 @@ def get_aggregate_productivity(
     segments_df = get_route_speed_segments(feed, route_id)
     #print(type(segments_df))
     segments_df = pd_filter(segments_df, 'direction_id', dir)
+    debug_dataframe(segments_df)
     rider_df = agg_rider_data(csvfile, route_num, dir, stype)
+    debug_dataframe(rider_df)
     combined_df = combine_ridership_route(segments_df, rider_df)
+    debug_dataframe(combined_df)
     if edges:
         log.info(f'Segment bins provided: {edges}')
         assert type(edges) == list
@@ -421,247 +439,8 @@ def get_aggregate_productivity(
     productivity_df = get_segment_productivity(combined_df, ntrips)
     return productivity_df
 
-def plot_agg_productivity(gdf, savepoint='bad.html'):
-    """
-    Plots the aggregate productivity based on a single-route ridermap
-    """
-    
-    # Original Values
-    colors = ["#470000", "#ce0e2d" ,'#dc7237', '#f6d32a', '#d7f62a', '#6abf4b','#45842e', '#007dbb', '#004a98']    
-    breaks = [0, 2.5, 5, 10, 15, 20, 25, 30, 40]
-
-    #colors = ["#00000", "#470000" ,'#ce0e2d', '#dc7237', '#f6d32a','#6abf4b','#007dbb','#004a98','#c028b9']
-    
-    classer = 'productivity_on'
-    # n_classes = len(colors)
-    gdf[classer] = gdf[classer].replace(np.nan, 0)
-    eol = gdf.iloc[-1:]['segment_name'].item()    
-    #print(eol)
-    if eol == 'EOL':
-        log.info('Last row is an EOL, dropping')
-        gdf = gdf.iloc[:-1]
-    #log.info(f'Jenks for classes is {n_classes}, classer will be {gdf[classer]}')
-    #breaks = jenkspy.jenks_breaks(gdf[classer], n_classes = n_classes)
-    #breaks = [2.4, 5, 10, 15, 20, 25, 30]
-        
-    gdf['seq'] = gdf.index
-
-    log.info(f'Breaks at {breaks}')
-    p = gtfs_plots.map_gdf(
-        gdf = gdf,
-        variable = 'productivity_activity',
-        colors = colors,
-        tooltip_var = ['start_stop_name','AverageOn','AverageOff','speed','productivity_activity', 'seq'] , 
-        tooltip_labels = ['Segment Start: ','Boardings: ', 'Alightings: ', 'Speed (mph): ', 'Productivity: ', 'Stop Sequence'], 
-        breaks=breaks
-    )
-    p.save(savepoint)
-
-def plot_2(gdf, colorscale, name, highlight = 'productivity_activity'):
-    tooltip_var = ['start_stop_name','AverageOn','AverageOff','speed','productivity_activity', 'seq']
-    tooltip_labels = ['Segment Start: ','Boardings: ', 'Alightings: ', 'Speed (mph): ', 'Productivity: ', 'Stop Sequence']
-
-    gdf['fill_color'] = gdf[highlight].apply(lambda x: colorscale(x))
-
-    gdf['seq'] = gdf.index
-
-    def style_function(feature):
-        return {
-            'fillOpacity': 0.5,
-            'weight': 3,  # math.log2(feature['properties']['speed'])*2,
-            'color': feature['properties']['fill_color']}
-    # my code for lines
-    geo_data = gdf.__geo_interface__
-    lyr = folium.GeoJson(
-        geo_data,
-        style_function=style_function,
-        name = name,
-        show=False,
-        tooltip=folium.features.GeoJsonTooltip(
-            fields=tooltip_var,
-            aliases=tooltip_labels,
-            labels=True,
-            sticky=False)
-        )
-    
-    return lyr
-    #colorscale.caption = 'Productivity Legend'
-
-    return m
-
-def build_map(feed, csv = CSV_PATH, step = 4):
-    #routes = [455]
-
-    routes = ['1', '17', '2', '200', '201', '205', '209', '21', '213', '217', 
-              '218', '220', '223', '227', '240', '248', '33', '35', '39', '4', 
-              '45', '451', '455', '47', '470', '509', '513', '54', 
-              '603X', '604', '612', '613', '62', '625', '626', '627', 
-              '628', '630', '640', '645', '72', '805', 
-              '806', '807', '821', '822', '830X', '831', 
-              '834', '850', '862', '871',
-              '9', 'F11', 'F202', 'F232', 'F453', 
-              'F514', 'F556', 'F570', 'F578', 'F590', 
-              'F618', 'F620', 'F94']
-
-            # Removed routes are:
-            # All Ski service
-            # 472, 473, 551 601, 602, 606, F638, 667, 833
-    #routes = list(feed.routes['route_short_name'])
-
-    routegeom = geopd.GeoDataFrame(feed.avg_speeds, geometry='geometry')
-    minx, miny, maxx, maxy = routegeom.geometry.total_bounds
-
-    centroid_lat = miny + (maxy - miny)/2
-    centroid_lon = minx + (maxx - minx)/2
-
-    m = folium.Map(
-        location=[centroid_lat, centroid_lon],
-        tiles='cartodbpositron', zoom_start=12
-        )
-
-    colorscale = LinearColormap(
-        colors=['#570600', '#ce0e2d', '#dc7237', '#f6d32a', '#6abf4b','#45842e','#2e847d'],
-        index =[0, 2.5, 5, 10, 20, 25, 40],
-        tick_labels=[10, 20, 30, 40],
-        vmin = 0,
-        vmax = 50,
-        caption='productivity'
-    )
-
-    #ldf = {}
-    directions = [1, 0]
-    for direction in directions:
-        for route in routes:
-            glen = get_number_stops(feed, route, direction)
-            name = "Route " + str(route) + " Direction " + str(direction)
-            #try:
-            log.info(f'Trying {name}')
-            gdf = bin_for_map(
-                feed, csv, route, direction, glen, step
-                    )
-            plot_2(gdf, colorscale, name).add_to(m)
-
-            
-            # Handle weird annoying cases where the number of stops is???
-                # More than the number of stops (?????)
-
-            # Update: should be fixed by modifying get_number_stops to drop duplicates
-
-            # except ValueError:
-            #     log.info('Route ' + str(route) + "threw an error")
-            #     glen = glen - 5
-            #     bin_for_map(
-            #         feed, csv, route, direction, glen, step
-            #         )
-            #     plot_2(gdf, colorscale, name).add_to(m)
-    
-
-    colorscale.add_to(m)
-    
-    folium.LayerControl().add_to(m)
-
-    m.save('index.html')
-
-def get_number_stops(feed, route_num, direction):
-    gd_route = get_route_speed_segments(
-        feed, route_id_from_route_num(feed, route_num)
-        )
-    gd_route = pd_filter(gd_route, 'direction_id', direction)
-    log.info(f'Number of stops (preliminary) {len(gd_route)}')
-    gd_route = gd_route.drop_duplicates(subset = ['stop_sequence'])
-    rtn = len(gd_route)
-    log.info(f'Number of stops (finalized) {len(gd_route)}')
-    return rtn
-
-def bin_for_map(feed, csv, route, direction, length, step):
-    gdf_split = range(
-        0, length, step
-    )
-    gdf_slist = list(gdf_split)
-    gdf = get_aggregate_productivity(
-        feed, csv, route, direction, gdf_slist
-    )
-    gdf = gdf.fillna(0)
-    #ldf[route] = gdf
-    return gdf
-
-def build_map_for_speed(feed, csv = CSV_PATH, step = 5):
-    """
-    I Know, I Know,
-
-    At some point I'll actually refactor
-    
-    But for now...
-    """
-
-    #routes = [455]
-
-    routes = ['1', '17', '2', '200', '201', '205', '209', '21', '213', '217', 
-              '218', '220', '223', '227', '240', '248', '33', '35', '39', '4', 
-              '45', '451', '455', '47', '470', '509', '513', '54', 
-              '603X', '604', '612', '613', '62', '625', '626', '627', 
-              '628', '630', '640', '645', '72', '805', 
-              '806', '807', '821', '822', '830X', '831', 
-              '834', '850', '862', '871',
-              '9', 'F11', 'F202', 'F232', 'F453', 
-              'F514', 'F556', 'F570', 'F578', 'F590', 
-              'F618', 'F620', 'F94']
-
-            # Removed routes are:
-            # All Ski service
-            # 472, 473, 551 601, 602, 606, F638, 667, 833
-    #routes = list(feed.routes['route_short_name'])
-
-    routegeom = geopd.GeoDataFrame(feed.avg_speeds, geometry='geometry')
-    minx, miny, maxx, maxy = routegeom.geometry.total_bounds
-
-    centroid_lat = miny + (maxy - miny)/2
-    centroid_lon = minx + (maxx - minx)/2
-
-    m = folium.Map(
-        location=[centroid_lat, centroid_lon],
-        tiles='cartodbpositron', zoom_start=12
-        )
-
-    colorscale = LinearColormap(
-        colors=['#570600', '#ce0e2d', '#dc7237', '#f6d32a', '#6abf4b','#45842e','#2e847d'],
-        index =[0, 10, 15, 20, 25, 30, 40],
-        tick_labels=[10, 20, 30, 40, 50],
-        vmin = 0,
-        vmax = 60,
-        caption='Speed'
-    )
-
-    #ldf = {}
-    directions = [1, 0]
-    for direction in directions:
-        for route in routes:
-            glen = get_number_stops(feed, route, direction)
-            name = "Route " + str(route) + " Direction " + str(direction)
-            #try:
-            log.info(f'Trying {name}')
-            gdf = bin_for_map(
-                feed, csv, route, direction, glen, step
-                    )
-            plot_2(gdf, colorscale, name, 'speed').add_to(m)
-
-            
-            # Handle weird annoying cases where the number of stops is???
-                # More than the number of stops (?????)
-
-            # Update: should be fixed by modifying get_number_stops to drop duplicates
-
-            # except ValueError:
-            #     log.info('Route ' + str(route) + "threw an error")
-            #     glen = glen - 5
-            #     bin_for_map(
-            #         feed, csv, route, direction, glen, step
-            #         )
-            #     plot_2(gdf, colorscale, name).add_to(m)
-    
-
-    colorscale.add_to(m)
-    
-    folium.LayerControl().add_to(m)
-
-    m.save('speed.html')
+def debug_dataframe(df):
+    global DEBUG_STEP
+    if DEBUG_MODE:
+        df.to_csv('Debug' + str(DEBUG_STEP) + '.csv')
+        DEBUG_STEP = DEBUG_STEP + 1

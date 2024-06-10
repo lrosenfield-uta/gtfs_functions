@@ -19,7 +19,7 @@ import boto3
 import io
 import sys
 import pendulum as pl
-
+import matplotlib.pyplot as plt
 
 if not sys.warnoptions:
     import warnings
@@ -865,6 +865,8 @@ class Feed:
 
         Returns the segment geometry as well as additional segment information
         """
+        global DEBUG_STEP
+        DEBUG_STEP = 0
         logging.info('Getting segments...')
         stop_times = self.stop_times
         shapes = self.shapes
@@ -873,11 +875,17 @@ class Feed:
         add_columns = ["route_id", "route_name","direction_id", "stop_name"]
 
         # merge stop_times and shapes to calculate cut distance and interpolated point
-        df_shape_stop = stop_times[req_columns + add_columns].drop_duplicates()\
-            .merge(shapes, on="shape_id", suffixes=("_stop", "_shape"))
+        df_shape_undropped = stop_times[req_columns + add_columns]
+        #debug_dataframe(df_shape_undropped, 'undropped')
+        df_shape_stop = df_shape_undropped.drop_duplicates()
+        #debug_dataframe(df_shape_stop, 'shapestop')
+        df_shape_stop = df_shape_stop.merge(shapes, on="shape_id", suffixes=("_stop", "_shape"))
+        #debug_dataframe(df_shape_stop, 'mergedstop')
+        #debug_for_map(df_shape_stop, 'mergedstop', rtfilt = '33219')
         logging.info('Projecting stops onto shape...')
         df_shape_stop["cut_distance_stop_point"] = df_shape_stop[["geometry_stop", "geometry_shape"]]\
             .apply(lambda x: x[1].project(x[0], normalized=True), axis=1)
+        debug_dataframe(df_shape_stop, 'projected')
         logging.info('Interpolating stops onto shape...')
         df_shape_stop["projected_stop_point"] = df_shape_stop[["geometry_shape", "cut_distance_stop_point"]]\
             .apply(lambda x: x[0].interpolate(x[1], normalized=True), axis=1)
@@ -887,6 +895,7 @@ class Feed:
         df_shape = shapes[shapes.shape_id.isin(stop_times.shape_id.unique())]
         df_shape["list_of_points"] = df_shape.geometry.apply(lambda x: list(MultiPoint(x.coords).geoms))
         df_shape_exp = df_shape.explode("list_of_points")
+        #debug_dataframe(df_shape_exp, 'exploded')
         df_shape_exp["projected_line_points"] = df_shape_exp[["geometry", "list_of_points"]].apply(lambda x: x[0].project(x[1], normalized=True), axis=1)
 
         # rename both dfs to concatenate
@@ -914,8 +923,9 @@ class Feed:
 
         # combine stops and shape points
         gdf = pd.concat([df_shape_stop, df_shape_exp], ignore_index=False)
-        gdf.sort_values(["shape_id", "normalized_distance_along_shape"], inplace=True)
-        gdf.reset_index(inplace=True, drop=True)
+        gdf = gdf.sort_values(["shape_id", "normalized_distance_along_shape"])
+        gdf = gdf.reset_index(drop=True)
+        debug_dataframe(gdf, 'combined_stops')
 
         # drop all non stops (had to combine first fto get their gdf index)
         cuts = gdf.where(gdf.cut_flag).dropna(subset="cut_flag")
