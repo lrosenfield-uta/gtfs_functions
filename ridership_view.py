@@ -1,12 +1,10 @@
 import ridership_functions as rfx
 import ridership_plots as rplt
-import folium
+# import folium
 from nicegui import run, ui, context, app, events
 import pandas
 import sys
 import os
-# from test_setup import F_URL, CSV_PATH, SVC_ID
-sys.path.insert(0, './gtfs_functions')
 import gtfs_functions
 
 session = None # I have no memory of what this does
