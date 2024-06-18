@@ -1,3 +1,10 @@
+"""
+Functions for combining ridership data with a gtfs_functions dataframe
+
+Author: Lilah Rosenfield || Utah Transit Authority
+11925@rideuta.com
+"""
+
 import pandas as pd
 import geopandas as geopd
 import shapely
@@ -10,15 +17,6 @@ from branca.colormap import LinearColormap
 CSV_PATH = '2024_January_Stops.csv'
 DEBUG_STEP = 0
 DEBUG_MODE = False
-
-DEFAULT_COLORSCALE = LinearColormap(
-    colors=['#570600', '#ce0e2d', '#dc7237', '#f6d32a', '#6abf4b','#45842e','#2e847d'],
-    index =[0, 2.5, 5, 10, 20, 25, 40],
-    tick_labels=[10, 20, 30, 40],
-    vmin = 0,
-    vmax = 50,
-    caption='productivity'
-    )
 
 #import gtfs_functions
 #import gtfs_plots as gt_plt
@@ -84,7 +82,7 @@ def get_route_speed_segments(feed, route_id):
 
 def agg_rider_data(csvfile, route_num, dir, stype = None):
     """
-    Filters & aggregate the rider data found in 'csvfile' containing cleaned
+    Filters & aggregates the rider data found in 'csvfile' containing cleaned
         APC data
     
     Filters on route 'route_num', direction 'dir' 

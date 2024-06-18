@@ -1,7 +1,7 @@
 import sys
 from importlib import reload as rl
 import ridership_functions as rfx
-F_URL = r'C:\Users\11925\Utah Transit Authority\Service Planning Central Coordinating - Tools and Data\GTFS Feeds\Dec_23.zip'
+F_URL = r'Feeds\Dec_23.zip'
 CSV_PATH = '2024_January_Stops.csv'
 SVC_ID = ['292.0.4']
 sys.path.insert(0, './gtfs_functions')
