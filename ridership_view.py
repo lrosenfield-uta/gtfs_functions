@@ -116,6 +116,9 @@ class Item:
         assert isinstance(values, list)
         self.valuesList = pandas.DataFrame(values)
         
+    def setValue(self,other):
+        # logging.info(f"Updating value of object to {other}")
+        self.value = other
 
     @valuesList.setter
     def valuesList(self, values):
@@ -163,6 +166,7 @@ prodToggle.valuesMap = {
     'Productivity': 'productivity_activity',
     'Speed': 'speed'
     }
+prodToggle.value = 'Productivity'
 
 # Refreshable UI Elements
 @ui.refreshable 
@@ -183,9 +187,7 @@ def list_dirs_function():
         dirs_toggle = ui.toggle(dirs.valuesList, on_change=update_stops)
         dirs_toggle.bind_value(dirs, 'value')
         dirs_toggle.bind_visibility_from(dirs, 'visibility')
-        prod_toggle = ui.toggle(prodToggle.valuesList)
-        prod_toggle.bind_visibility(dirs, 'visibility')
-        prod_toggle.bind_value(prodToggle.value)
+        
 
 @ui.refreshable
 def list_stops_function():
@@ -275,7 +277,7 @@ def update_stops():
 
 def update_map():
     buttonObject.visibility = False
-    ui.notify('calculating Productivity')
+    ui.notify(f'Calculating {prodToggle.value}')
     edges = set(buttonObject.valuesList['id'].tolist())
     edges = {v - 1 for v in edges}
     edges.add(0)
@@ -283,7 +285,7 @@ def update_map():
     edges_lst.sort()
     newlyr = rplt.build_lyr_for_route(
         appObject.feed, routes.value, edges_lst, dirs.value,
-        highlight=prodToggle.valuesMap[buttonObject.value],
+        highlight=prodToggle.valuesMap[prodToggle.value],
         csv=appObject.csvURI)
     route_dir = (routes.value, dirs.value)
     appObject.mapLayers[route_dir] = newlyr
@@ -319,12 +321,16 @@ def application():
     with ui.grid(columns='1fr 3fr').classes('w-full h-full gap-2'):
         for _ in range(1):
             with ui.column():
-                with ui.row().classes('w-full justify-between'):
-                    ui.label('Route Productivity Monitor').classes('self-center')
-                    with ui.dropdown_button(
-                        'Options'):
+                ui.label('Route Productivity Monitor').classes('self-center')
+                with ui.row().classes('w-full justify-right'):
+                    with ui.dropdown_button('Options'):
                             ui.item('Save Map', on_click=download_map)
                             ui.item('Clear Map', on_click=appObject.openDialog)
+                    with ui.dropdown_button(prodToggle.valuesList) as prod_toggle:
+                        #prod_toggle.bind_visibility(dirs, 'visibility')
+                        prod_toggle.bind_text(prodToggle, 'value')
+                        for i in prodToggle.valuesList:
+                            ui.item(i, on_click=lambda i=i: prodToggle.setValue(i))
                 routes_dropdown_function()
                 list_dirs_function()
                 list_stops_function()
