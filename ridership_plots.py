@@ -68,6 +68,10 @@ def plot_2(gdf,
            name, 
            colorscale=DEFAULT_COLORSCALE,
            highlight = 'productivity_activity'):
+    """
+    Returns a layer with name name for a folium map highlighting a given column 
+        from a provided GeoDataFrame
+    """
     tooltip_var = ['start_stop_name','AverageOn','AverageOff','speed','productivity_activity', 'seq']
     tooltip_labels = ['Segment Start: ','Boardings: ', 'Alightings: ', 'Speed (mph): ', 'Productivity: ', 'Stop Sequence']
 
@@ -78,7 +82,7 @@ def plot_2(gdf,
     def style_function(feature):
         return {
             'fillOpacity': 0.5,
-            'weight': 3,  # math.log2(feature['properties']['speed'])*2,
+            'weight': 6,  # math.log2(feature['properties']['speed'])*2,
             'color': feature['properties']['fill_color']}
     # my code for lines
     geo_data = gdf.__geo_interface__
@@ -100,6 +104,12 @@ def plot_2(gdf,
     # return m
 
 def initialized_map(feed, lyrs, colorscale = DEFAULT_COLORSCALE):
+    """
+    Returns a folium.map with legend and colorscale containing all layers in
+        dictionary lyrs
+
+    feed of type gtfs_functions.Feed provides the geometry for the map
+    """
     routegeom = geopd.GeoDataFrame(feed.stops, geometry='geometry')
     minx, miny, maxx, maxy = routegeom.geometry.total_bounds
 
@@ -119,18 +129,30 @@ def initialized_map(feed, lyrs, colorscale = DEFAULT_COLORSCALE):
 
     return m
 
-def build_lyr_for_route(feed, route, edges, direction,
-                         csv = rfx.CSV_PATH, colorscale = DEFAULT_COLORSCALE):
+def build_lyr_for_route(feed: gtfs_functions.Feed, route, edges:list, 
+                        direction:int,
+                        csv:str, 
+                        highlight:str, 
+                        colorscale = DEFAULT_COLORSCALE,):
+    """
+    Returns a folium layer for a given route from a GTFS feed
+    
+    Passes edges, direction, & csv to 
+        ridership_functions.get_aggregate_productivity
+
+    Passes highlight (str) and colorscale to ridership_plots.plot_2
+    """
+
     name = "Route " + str(route) + " Direction " + str(direction)
         #try:
-    log.info(f'Trying {name}')
+    log.info(f'Building layer for {name} with highlight {highlight}')
     gdf = rfx.get_aggregate_productivity(
         feed, csv, route, direction, edges
                     )
     gdf = gdf.fillna(0)
     
     log.info('Getting Layer')
-    lyr = plot_2(gdf, name, colorscale=colorscale)
+    lyr = plot_2(gdf, name, colorscale=colorscale, highlight=highlight)
     return lyr
 
 

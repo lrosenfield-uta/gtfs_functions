@@ -1,11 +1,27 @@
+from pythonnet import set_runtime
+set_runtime('netfx')
+
+import os
+from pathlib import Path
+import logging
+
+logging.basicConfig(level=logging.INFO)
+
+runtime = Path.cwd() / 'python312.dll'
+if runtime.exists():
+    logging.info('Detected operating in package mode!')
+    logging.info('Attempting to set up envs')
+    os.environ["PYTHONNET_PYDLL"] = str(runtime.resolve())
+    os.environ["BASE_DIR"] = str(Path.cwd().resolve())
+
 import ridership_functions as rfx
 import ridership_plots as rplt
+import pickle
 # import folium
 from nicegui import run, ui, context, app, events
 import pandas
-import sys
-import os
 import gtfs_functions
+import datetime as dt
 
 session = None # I have no memory of what this does
 
@@ -28,7 +44,7 @@ class AppClass:
     
     @feed.setter
     def feed(self, other):
-        assert type(other) == rfx.gtfs_functions.Feed
+        assert isinstance(other, gtfs_functions.Feed)
         self._feed = other
         self.is_feed_loading = False
         self._isFeedLoaded = True
@@ -50,10 +66,10 @@ class AppClass:
                                             service_ids=[sid],
                                             time_windows=[0,24]
                                         )
-        print("Loading Feed")
+        logging.info("Loading GTFS Feed")
         self.is_feed_loading = True
         self.feed.avg_speeds
-        print("Feed Loaded")
+        logging.info("GTFS Feed Loaded")
         return self.feed
 
     def clearMapLayers(self):
@@ -66,7 +82,7 @@ class AppClass:
         self.dialog.clear()
 
     def openDialog(self):
-        print('Confirming user wants to clear')
+        logging.info('Confirming user wants to clear')
         with ui.dialog() as self.dialog:
             with ui.card():
                 ui.label('Do you really want to clear all lines from the map?')
@@ -83,16 +99,21 @@ class Item:
         self._valuesList = [] # Thank g-d for non-static typing
         self._visibility = False
         self.columns = []
+        self._valuesMap = None
+        self._valuesMapIsSet = False
 
     @property
     def valuesList(self):
-        return self._valuesList
+        if self._valuesMapIsSet:
+            return list(self._valuesMap)
+        else: 
+            return self._valuesList
     
     def setValuesDF(self, values):
         """
         Gets a list of dicts, converts to a PD dataframe, and sets as values
         """
-        assert type(values)==list
+        assert isinstance(values, list)
         self.valuesList = pandas.DataFrame(values)
         
 
@@ -101,8 +122,13 @@ class Item:
         """
         Toggles visibility on for an item and loads the values list
         """
-        self.visibility = True
-        self._valuesList = values
+        if self._valuesMapIsSet:
+            raise AttributeError(
+                "Cannot set valuesList directly when valuesMap is set"
+                )
+        else:
+            self.visibility = True
+            self._valuesList = values
 
     
     @property
@@ -111,16 +137,32 @@ class Item:
     
     @visibility.setter
     def visibility(self, other):
-        assert type(other) == bool
+        assert isinstance(other, bool)
         self._visibility = other
+
+    @property
+    def valuesMap(self):
+        return self._valuesMap
+    
+    @valuesMap.setter
+    def valuesMap(self, other):
+        assert isinstance(other, dict)
+        self._valuesMap = other
+        self._valuesMapIsSet = True
 
 # Set up objects
 appObject = AppClass()
 routes = Item()
 dirs = Item()
+prodToggle = Item()
 stops = Item()
 buttonObject = Item()
+
 buttonObject.visibility = False
+prodToggle.valuesMap = {
+    'Productivity': 'productivity_activity',
+    'Speed': 'speed'
+    }
 
 # Refreshable UI Elements
 @ui.refreshable 
@@ -141,6 +183,9 @@ def list_dirs_function():
         dirs_toggle = ui.toggle(dirs.valuesList, on_change=update_stops)
         dirs_toggle.bind_value(dirs, 'value')
         dirs_toggle.bind_visibility_from(dirs, 'visibility')
+        prod_toggle = ui.toggle(prodToggle.valuesList)
+        prod_toggle.bind_visibility(dirs, 'visibility')
+        prod_toggle.bind_value(prodToggle.value)
 
 @ui.refreshable
 def list_stops_function():
@@ -175,7 +220,7 @@ def activate_map_function():
         html = html.replace('">', 'height:100%;">',1)
         html = html.replace('height:0','height:100%',1)
         ui.html(html).classes('w-full h-full').style('height: 100%')
-        print('Map activation refreshed')
+        logging.info('Map activation refreshed')
     else: pass
 
 # UI Element Setters (I know I know)
@@ -193,7 +238,7 @@ async def start_feedload():
     routes.visibility = True
 
 def update_dirs():
-    print(f"Updating direction for route number {routes.value}")
+    logging.info(f"Updating direction for route number {routes.value}")
     
     # Note: adds previously undefined object rid to Item 'routes'
     if routes.value is not None:
@@ -203,7 +248,7 @@ def update_dirs():
         dirs_list = list(set(trips['direction_id']))
         dirs.valuesList = dirs_list
     else:
-        print("No route provided, holding")
+        logging.info("No route provided, holding")
     list_dirs_function.refresh()
 
 def update_stops():
@@ -238,6 +283,7 @@ def update_map():
     edges_lst.sort()
     newlyr = rplt.build_lyr_for_route(
         appObject.feed, routes.value, edges_lst, dirs.value,
+        highlight=prodToggle.valuesMap[buttonObject.value],
         csv=appObject.csvURI)
     route_dir = (routes.value, dirs.value)
     appObject.mapLayers[route_dir] = newlyr
@@ -247,7 +293,14 @@ def update_map():
 
 def download_map():
     html_doc= appObject.mapItem.get_root()._repr_html_()
-    ui.download(bytes(html_doc, encoding='utf-8'), 'productivity.html')
+    dirmk('Saved Maps')
+    time_marker = str(
+        dt.datetime.today().replace(microsecond=0)
+        ).replace(":","")
+    with open(f'Saved Maps\\Export {time_marker}.html', 'w') as o:
+        logging.info("Exporting map")
+        o.write(html_doc)
+    #ui.download(bytes(html_doc, encoding='utf-8'), 'productivity.html')
 
 # def add_number() -> None:
 #    numbers.appObjectend(random.randint(0, 100))
@@ -257,7 +310,7 @@ def download_map():
 
 @ui.page('/application')
 def application():
-    print("Starting application")
+    logging.info("Starting productivity monitor application")
     context.client.content.classes('h-[100vh]')
     ui.add_head_html(
     '<style>.q-textarea.flex-grow .q-field__control { height: 100% }</style>'
@@ -279,12 +332,22 @@ def application():
             with ui.card().classes('no-shadow border-[1px] w-full'):
                 activate_map_function()
 
+def dirmk(dirname):
+    if dirname not in os.listdir():
+        logging.info(f"Directory {dirname} doesn't exist! Creating...")
+        os.mkdir(dirname)
+    else: pass
+
 def activate_application():
     set_routes()
     ui.navigate.to('/application')
     routes_dropdown_function.refresh()
 
 feed_uris = []
+
+dirmk('Feeds')
+dirmk('CSVs')
+
 lsfeed = os.scandir('Feeds')
 for e in lsfeed:
     feed_uris.append(e.path)

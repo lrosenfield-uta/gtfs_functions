@@ -12,19 +12,13 @@ import logging as log
 import sys
 import jenkspy
 import numpy as np
-import folium
+# import folium
 from branca.colormap import LinearColormap
 CSV_PATH = '2024_January_Stops.csv'
 DEBUG_STEP = 0
 DEBUG_MODE = False
-
 #import gtfs_functions
-#import gtfs_plots as gt_plt
-
-sys.path.insert(0, './gtfs_functions')
-
-import gtfs_functions
-import gtfs_plots
+# import gtfs_plots
 
 if not sys.warnoptions:
     import warnings

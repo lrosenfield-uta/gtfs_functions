@@ -885,7 +885,7 @@ class Feed:
         logging.info('Projecting stops onto shape...')
         df_shape_stop["cut_distance_stop_point"] = df_shape_stop[["geometry_stop", "geometry_shape"]]\
             .apply(lambda x: x[1].project(x[0], normalized=True), axis=1)
-        debug_dataframe(df_shape_stop, 'projected')
+        # debug_dataframe(df_shape_stop, 'projected')
         logging.info('Interpolating stops onto shape...')
         df_shape_stop["projected_stop_point"] = df_shape_stop[["geometry_shape", "cut_distance_stop_point"]]\
             .apply(lambda x: x[0].interpolate(x[1], normalized=True), axis=1)
@@ -925,7 +925,7 @@ class Feed:
         gdf = pd.concat([df_shape_stop, df_shape_exp], ignore_index=False)
         gdf = gdf.sort_values(["shape_id", "normalized_distance_along_shape"])
         gdf = gdf.reset_index(drop=True)
-        debug_dataframe(gdf, 'combined_stops')
+        # debug_dataframe(gdf, 'combined_stops')
 
         # drop all non stops (had to combine first fto get their gdf index)
         cuts = gdf.where(gdf.cut_flag).dropna(subset="cut_flag")

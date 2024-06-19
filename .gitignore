@@ -21,3 +21,5 @@ debug_segs.csv
 /dist
 /Feeds
 /Feeds
+/dist_old
+/build_old
