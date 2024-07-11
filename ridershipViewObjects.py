@@ -65,6 +65,9 @@ class AppClass:
 
     @property
     def dialog(self):
+        """
+        A NiceGUI UI dialog box
+        """
         return self._dialog
     
     @dialog.setter
@@ -130,24 +133,13 @@ class AppClass:
 
 class InteractableModelItem:
     """
-    A class defining for global values associated with view items.
+    A class defining for global values and related logic associated interactable
+       view items.
 
     Initialized empty, but has a series of values with meanings relevant to the
         relevant UI Function via setter or method
 
-    Parameter visibility (Bool): if the UI element should be visible.
-        Automatically switches to 'True' when valuesList is updated.
-
-    Parameter valuesList: the list of all values which are associated 
-        with a given UI Element. Typically list or DF
-    
-    Parameter userValue: value(s) selected or identified by the user.
-
     Parameter columns: the columns used for a table with list valuesList
-
-    Parameter valuesMap: a mapping dictionary containing values to be included
-        in valuesList. 
-        valuesList cannot be set directly when valuesMap is set.
     """
     def __init__(self):
         self._userValue = None
@@ -159,6 +151,12 @@ class InteractableModelItem:
 
     @property
     def valuesList(self):
+        """
+        The list of all values which are associated with a given UI Element. 
+            Typically list or DF
+            
+            valuesList cannot be set directly when valuesMap is set.
+        """
         if self._valuesMapIsSet:
             return list(self._valuesMap)
         else: 
@@ -180,6 +178,10 @@ class InteractableModelItem:
     
     @property
     def visibility(self):
+        """
+        If the UI element should be visible (Bool)
+            Automatically switches to 'True' when valuesList is updated.
+        """
         return self._visibility
     
     @visibility.setter
@@ -189,6 +191,9 @@ class InteractableModelItem:
 
     @property
     def valuesMap(self):
+        """
+        a mapping dictionary containing values to be included in valuesList.
+        """ 
         return self._valuesMap
     
     @valuesMap.setter
@@ -199,6 +204,10 @@ class InteractableModelItem:
 
     @property
     def userValue(self):
+        """
+        Value(s) selected or identified by the user to be contained in the
+            modelObject
+        """
         return self._userValue
     
     @userValue.setter

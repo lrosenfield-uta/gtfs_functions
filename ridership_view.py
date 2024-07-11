@@ -266,12 +266,25 @@ def rearrange_and_convert_to_json(data):
     """
     Helper function, created with the support of a large pile of linear algebra
     """
-    rearranged_data = {}
+
+    rearranged_data = {"Routes":[]}
 
     for (rt, dir), records in data.items():
-        if rt not in rearranged_data:
-            rearranged_data[rt] = {}
-        rearranged_data[rt][dir] = records
+        route = next(
+            (r for r in rearranged_data["Routes"] if r["Route Number"] == rt),
+            None)
+        
+        if not route:
+            route = {"Route Number": rt, "Directions": []}
+            rearranged_data["Routes"].append(route)
+        
+        direction = next((d for d in route["Directions"] if d["Direction ID"] == dir), None)
+        
+        if not direction:
+            direction = {"Direction ID": dir, "Stops": []}
+            route["Directions"].append(direction)
+        
+        direction["Stops"] = records
 
     # Convert the rearranged dictionary to a JSON string
     json_data = json.dumps(rearranged_data, indent=4)
@@ -289,8 +302,7 @@ def open_dialog():
         """
         Opens a dialog confirming user wants to clear the map
 
-        Encapsulated in appObject because we need to control the dialog box
-        from helper functions
+        calls helper functions clear_clean and dialog_cleanup
         """
         logging.info('Confirming user wants to clear')
         with ui.dialog() as appObject.dialog:
@@ -310,6 +322,11 @@ def clear_clean():
 
 
 def dialog_cleanup():
+    """
+    Closes out appObject.dialog & refreshes the map
+
+    Pulled out of AppObject for refactoring to avoid recursion
+    """
     appObject.dialog.close()
     appObject.dialog.clear()
     activate_map_function.refresh()
