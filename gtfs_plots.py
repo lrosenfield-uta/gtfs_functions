@@ -5,10 +5,11 @@ import plotly.express as px
 import jenkspy
 import folium
 import logging
+from branca.colormap import LinearColormap
 
 import warnings
 warnings.filterwarnings("ignore")
-
+logging.info('imported the dev version of gtfs_plots (rev 0321-1814)')
 
 def map_gdf(
         gdf,
@@ -70,8 +71,16 @@ def map_gdf(
     else:
         gdf['radius'] = gdf[variable] / gdf[variable].max() * 10
         index = [int(b) for b in breaks]
-        colorscale = branca.colormap.StepColormap(
-            colors, index=index, caption=variable)
+        #colorscale = branca.colormap.StepColormap(
+        #    colors, index=index, caption=variable)
+        colorscale = LinearColormap(
+            colors=['#570600', '#ce0e2d', '#dc7237', '#f6d32a', '#6abf4b','#45842e','#2e847d'],
+            index =[0, 2.5, 5, 10, 20, 25, 40],
+            tick_labels=[10, 20, 30, 40],
+            vmin = 0,
+            vmax = 50,
+            caption='productivity'
+        )
         gdf['fill_color'] = gdf[variable].apply(lambda x: colorscale(x))
 
     if gdf.geom_type.values[0] == 'Point':
@@ -105,5 +114,7 @@ def map_gdf(
                 labels=True,
                 sticky=False)
             ).add_to(m)
+        #colorscale.caption = 'Productivity Legend'
+        colorscale.add_to(m)
 
     return m

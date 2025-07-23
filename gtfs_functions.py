@@ -9,7 +9,8 @@ import requests, io
 import pendulum as pl
 import hashlib
 from shapely.geometry import LineString, MultiPoint
-from gtfs_functions.aux_functions import *
+#from gtfs_functions.aux_functions import *
+from aux_functions import *
 from itertools import permutations, chain
 from shapely import distance
 from h3 import geo_to_h3, k_ring
@@ -18,20 +19,21 @@ import boto3
 import io
 import sys
 import pendulum as pl
-
+import matplotlib.pyplot as plt
 
 if not sys.warnoptions:
     import warnings
     warnings.simplefilter("ignore")
 
 logging.basicConfig(level=logging.INFO)
-
+logging.info('imported the dev version of gtfs_functions (rev 0314-940)')
 
 class Feed:
     def __init__(
             self,
             gtfs_path: str,
             time_windows: list = [0, 6, 9, 15, 19, 22, 24],
+            service_ids: list = [],
             busiest_date: bool = True,
             geo: bool = True,
             patterns: bool = True,
@@ -41,10 +43,18 @@ class Feed:
         """
         Feed class to handle GTFS data.
         """
+        if service_ids != []:
+            if ((start_date != None) | (end_date != None)):
+                raise ValueError("Feed was passed both Service IDs and Dates, "
+                                 "but we can only handle one at a time")
+            logging.info('Feed was initiated with Service IDs. '
+                         'Ignoring busiest_date')
+        
         self._gtfs_path = gtfs_path
         self._time_windows = time_windows
         self._busiest_date = busiest_date
         self._geo = geo
+        self._service_ids = service_ids
         self._patterns = patterns
         self._start_date = start_date
         self._end_date = end_date
@@ -71,6 +81,7 @@ class Feed:
         self._dist_matrix = None
         self._dates_service_id = None
 
+
     @property
     def gtfs_path(self):
         return self._gtfs_path
@@ -79,6 +90,10 @@ class Feed:
     def time_windows(self):
         return self._time_windows
     
+    @property
+    def service_ids(self):
+        return self._service_ids
+
     @property
     def busiest_date(self):
         return self._busiest_date
@@ -560,10 +575,47 @@ class Feed:
         
         return dates_service_id[~dates_service_id.keep.isnull()]
 
+    def _trips_from_busiest_date(self):
+        """
+        Helper function for get_trips. 
+            Returns a list of the service_ids of the busiest date(s)
+        """
+        dates = self.dates
+        dates_service_id = self.parse_calendar()
+        
+        # If busiest_date=True, we have to count the number of trips
+        if self.busiest_date:
+            # Trip per date
+            date_ntrips = self._temp_trips.merge(dates_service_id).\
+                    groupby(['date']).trip_id.count().\
+                    sort_values(ascending=False)
+            
+        # If we are looking for the busiest date within our date period,
+        # we only keep the dates in that period of time.
+        if (self.busiest_date) & (dates!=[]):
+            dates_service_id = dates_service_id[dates_service_id.date.isin(dates)]
+            date_ntrips = date_ntrips[date_ntrips.index.isin(dates)]
+        
+        # Now that we've considered both cases we can just filter 
+        # with the busiest_date of the "dates" that made it this far
+        if self.busiest_date:
+            # In that case, if "dates" is empty we need to find the busiest date
+            busiest_date = list(date_ntrips[date_ntrips==date_ntrips.max()].index)
+            max_trips = date_ntrips[date_ntrips==date_ntrips.max()].values[0]
+
+            logging.info(f'The busiest date/s of this feed or your selected date range is/are:  {busiest_date} with {max_trips} trips.')
+            logging.info('In the case that more than one busiest date was found, the first one will be considered!')
+            logging.info(f'In this case is {busiest_date[0]}.')
+
+            # We need "dates" to be a list
+            dates = busiest_date[:1]
+        return (dates_service_id[dates_service_id.date.isin(dates)]
+                ['service_id'].tolist())
 
     def get_trips(self):
         routes = self.routes
         dates = self.dates
+        service_ids = self.service_ids
 
         trips = extract_file('trips', self)
         trips['trip_id'] = trips.trip_id.astype(str)
@@ -575,54 +627,36 @@ class Feed:
         # If we were asked to only fetch the busiest date
         # if self.busiest_date:
             # trips = trips[trips.service_id==self.busiest_service_id]
+        """
+        If service ID's have been provided, we just pull those directly
 
-        # If we're looking for the busiest date or a specific list of
-        # dates we need to parse de calendar
-        if (self.busiest_date) | (dates!=[]):
-            """
-            In the case we have three possibilites:
-            1. busiest_date=True & dates==[]: in this case the user looks for the 
-                busiest date in the entire feed
-            2. busiest_date=True & dates!=[]: in this case the user looks for the
-                busiest date within the date range provided.
-            3. busiest_daet=False & dates!=[]: in this case the user looks for the
-                entire feed within the date range provided and we don't need to change
-                the "dates" variable at all.
-            """
-            dates_service_id = self.parse_calendar()
+        If we haven't gotten service ID's, then
+        1. busiest_date=True & dates==[]: 
+            we look for the busiest date in the entire feed
+        2. busiest_date=True & dates!=[]: 
+            we look for the busiest date in the range provided
+        3. busiest_date=False & dates!=[]: 
+            we go through the entire feed within the date range provided 
+            and we don't need to change the "dates" variable at all.
+        """
 
-            # If busiest_date=True, we have to count the number of trips
-            if self.busiest_date:
-                # Trip per date
-                date_ntrips = trips.merge(dates_service_id).groupby(['date']).\
-                        trip_id.count().sort_values(ascending=False)
-                
-            # If we are looking for the busiest date within our date period,
-            # we only keep the dates in that period of time.
-            if (self.busiest_date) & (dates!=[]):
-                dates_service_id = dates_service_id[dates_service_id.date.isin(dates)]
-                date_ntrips = date_ntrips[date_ntrips.index.isin(dates)]
-            
-            # Now that we've considered both cases we can just filter 
-            # with the busiest_date of the "dates" that made it this far
-            if self.busiest_date:
-                # In that case, if "dates" is empty we need to find the busiest date
-                busiest_date = list(date_ntrips[date_ntrips==date_ntrips.max()].index)
-                max_trips = date_ntrips[date_ntrips==date_ntrips.max()].values[0]
+        # If we've been provided service ID's we use them directly
+        # If not, we hand off to the logic in _trips_from_busiest_date
+        if service_ids == []:
+            if (self.busiest_date) | (dates!=[]):
 
-                logging.info(f'The busiest date/s of this feed or your selected date range is/are:  {busiest_date} with {max_trips} trips.')
-                logging.info('In the case that more than one busiest date was found, the first one will be considered.')
-                logging.info(f'In this case is {busiest_date[0]}.')
-
-                # We need "dates" to be a list
-                dates = busiest_date[:1]
-            
+                # I'm fairly certain this is the 'safe' way to do this
+                self._temp_trips = trips.copy()
+                service_ids = self._trips_from_busiest_date()
+        
+        # Once we've (potentially) gotten service IDs from dates, we try again
+        if service_ids != []:    
             # Keep only the trips that are relevant to the use case
-            trips = trips.set_index('service_id').join(
-                dates_service_id[dates_service_id.date.isin(dates)]\
-                    .set_index('service_id'),
-                how='inner'
-            ).reset_index(names='service_id').drop(['keep', 'date'], axis=1).drop_duplicates()
+            logging.info(f'Including trips under the following service IDs:\n'
+                         f'{service_ids}')
+            trips = trips.query('service_id in @service_ids')\
+                .reset_index(names='service_id', drop=True)\
+                .drop_duplicates()
 
         # Get routes info in trips
         # The GTFS feed might be missing some of the keys, e.g. direction_id or shape_id.
@@ -831,6 +865,8 @@ class Feed:
 
         Returns the segment geometry as well as additional segment information
         """
+        global DEBUG_STEP
+        DEBUG_STEP = 0
         logging.info('Getting segments...')
         stop_times = self.stop_times
         shapes = self.shapes
@@ -839,11 +875,17 @@ class Feed:
         add_columns = ["route_id", "route_name","direction_id", "stop_name"]
 
         # merge stop_times and shapes to calculate cut distance and interpolated point
-        df_shape_stop = stop_times[req_columns + add_columns].drop_duplicates()\
-            .merge(shapes, on="shape_id", suffixes=("_stop", "_shape"))
+        df_shape_undropped = stop_times[req_columns + add_columns]
+        #debug_dataframe(df_shape_undropped, 'undropped')
+        df_shape_stop = df_shape_undropped.drop_duplicates()
+        #debug_dataframe(df_shape_stop, 'shapestop')
+        df_shape_stop = df_shape_stop.merge(shapes, on="shape_id", suffixes=("_stop", "_shape"))
+        #debug_dataframe(df_shape_stop, 'mergedstop')
+        #debug_for_map(df_shape_stop, 'mergedstop', rtfilt = '33219')
         logging.info('Projecting stops onto shape...')
         df_shape_stop["cut_distance_stop_point"] = df_shape_stop[["geometry_stop", "geometry_shape"]]\
             .apply(lambda x: x[1].project(x[0], normalized=True), axis=1)
+        # debug_dataframe(df_shape_stop, 'projected')
         logging.info('Interpolating stops onto shape...')
         df_shape_stop["projected_stop_point"] = df_shape_stop[["geometry_shape", "cut_distance_stop_point"]]\
             .apply(lambda x: x[0].interpolate(x[1], normalized=True), axis=1)
@@ -853,6 +895,7 @@ class Feed:
         df_shape = shapes[shapes.shape_id.isin(stop_times.shape_id.unique())]
         df_shape["list_of_points"] = df_shape.geometry.apply(lambda x: list(MultiPoint(x.coords).geoms))
         df_shape_exp = df_shape.explode("list_of_points")
+        #debug_dataframe(df_shape_exp, 'exploded')
         df_shape_exp["projected_line_points"] = df_shape_exp[["geometry", "list_of_points"]].apply(lambda x: x[0].project(x[1], normalized=True), axis=1)
 
         # rename both dfs to concatenate
@@ -880,8 +923,9 @@ class Feed:
 
         # combine stops and shape points
         gdf = pd.concat([df_shape_stop, df_shape_exp], ignore_index=False)
-        gdf.sort_values(["shape_id", "normalized_distance_along_shape"], inplace=True)
-        gdf.reset_index(inplace=True, drop=True)
+        gdf = gdf.sort_values(["shape_id", "normalized_distance_along_shape"])
+        gdf = gdf.reset_index(drop=True)
+        # debug_dataframe(gdf, 'combined_stops')
 
         # drop all non stops (had to combine first fto get their gdf index)
         cuts = gdf.where(gdf.cut_flag).dropna(subset="cut_flag")

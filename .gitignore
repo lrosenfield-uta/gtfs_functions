@@ -3,3 +3,27 @@ example
 notebooks
 *.pyc
 *.sh
+rt4.html
+rt613.html
+speed.html
+*.html
+Riders.ipynb
+2024_January_Stops.csv
+2023_04_stop_Apr_2023.csv
+test_setup.py
+Debug0.csv
+Debug1.csv
+Debug2.csv
+Debug3.csv
+Debug4.csv
+debug_segs.csv
+/build
+/dist
+/Feeds
+/Feeds
+/dist_old
+/build_old
+/Saved Segments
+/dist_old1
+CSVs/2024_04_stop_Apr_2024.csv
+CSVs/2024_04_stop_Aug_2024.csv

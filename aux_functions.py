@@ -4,6 +4,7 @@ import utm
 import geopandas as gpd
 import logging
 import numpy as np
+import folium
 
 
 def add_runtime(st):
@@ -30,10 +31,10 @@ def add_distance(
             'arrival_time', 'departure_time']):
     logging.info('adding distance in meters')
     st = stop_times[st_cols]
-    st.rename(columns={'stop_id': 'start_stop_id'}, inplace=True)
+    st = st.rename(columns={'stop_id': 'start_stop_id'})
 
     # Merge with segments_gdf to get the distance
-    dist = pd.merge(st, segments_gdf[seg_cols], how='left')
+    dist = pd.merge(st, segments_gdf[seg_cols], how='left',indicator=True)
     dist = gpd.GeoDataFrame(data=dist, geometry=dist.geometry, crs='EPSG:4326')
     
     return dist
@@ -400,3 +401,27 @@ def num_to_letters(num):
         result = chr(digit + 65) + result
         num //= 26
     return result
+
+DEBUG_MODE = True
+DEBUG_STEP = 0
+
+def debug_dataframe(df, title=""):
+    global DEBUG_STEP
+    if DEBUG_MODE:
+        df = (df[df['route_id']=='33219'])
+        df.to_csv('Debug_step' + str(DEBUG_STEP) + '_' + title + '.csv')
+        DEBUG_STEP = DEBUG_STEP + 1
+
+# def debug_for_map(gdf, title, rtfilt = None):
+#     global DEBUG_STEP
+#     if DEBUG_MODE:
+#         if rtfilt:
+#             gdf = (gdf[gdf['route_id']==rtfilt])
+#         m = folium.Map()
+#         p_gd = gpd.GeoDataFrame(gdf, geometry='geometry_stop')
+#         l_gd = gpd.GeoDataFrame(gdf, geometry='geometry_shape')
+#         lyr_p = folium.GeoJson(p_gd)
+#         lyr_l = folium.GeoJson(l_gd.__geo_interface__)
+#         lyr_l.add_to(m)
+#         lyr_p.add_to(m)
+#         m.save('Debug_step' + str(DEBUG_STEP) + '_' + title + '.csv')
