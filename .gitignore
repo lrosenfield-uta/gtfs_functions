@@ -3,11 +3,3 @@ example
 notebooks
 *.pyc
 *.sh
-/dist
-/build
-/build_old
-/dist_old1
-/CSVs
-509comp.html
-/Feeds
-index.html
