@@ -10,7 +10,7 @@ import pendulum as pl
 import hashlib
 from shapely.geometry import LineString, MultiPoint
 
-from aux_functions import *
+from gtfs_functions.aux_functions import *
 
 from itertools import permutations, chain
 from shapely import distance
