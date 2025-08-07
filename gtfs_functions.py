@@ -49,7 +49,7 @@ class Feed:
                                  "but we can only handle one at a time")
             logging.info('Feed was initiated with Service IDs. '
                          'Ignoring busiest_date')
-        
+
         self._gtfs_path = gtfs_path
         self._time_windows = time_windows
         self._busiest_date = busiest_date
